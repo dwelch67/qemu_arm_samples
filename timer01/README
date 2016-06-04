@@ -1,0 +1,42 @@
+
+See the top level README for information on how to run these examples.
+
+So the qemu source versatilepb.c shows us this.
+
+    sysbus_create_simple("sp804", 0x101e2000, pic[4]);
+    /* 0x101e2000 Timer 0/1.  */
+
+And the sp804 is ARM ip as well, we can get the documentation from
+ARM.  Pretty easy to program.  If we leave all the other bits in
+the control register zero exept for enable, then it is a free running
+16 bit down counter.  That rolls over.
+
+The first part of this example demonstrates that by counting down
+until it detects a rollover.
+
+The second part we set it for a 32 bit counter, same deal except it
+takes much much longer.
+
+Examining qemu/hw/timer/arm_timer.c which holds the source for this
+emulated timer.   arm_timer_recalibrate() configures a local variable
+limit which is basically the initial count.  Perhaps that is how
+the real hardware works, perhaps not...For the free running mode it
+starts at the max value (0xFFFF or 0xFFFFFFFF) depending on the size.
+This timer uses qemu/hw/core/ptimer.c which is tied into the simulated
+clock for the simulated chip, and derives this timer from that.  Our
+code takes some time to do the hexstring() for each value it reads.
+On my computer:
+
+FF437B8F
+FF437B6E
+FF437B4D
+FF437B2C
+FF437B0B
+FF437AEA
+FF437AC9
+
+or 0x21 (33) counts per.  Likely a lot more than 33 instructions to
+do that, for real hardware we would be outrunning the uart by quite a
+bit so the uart speed would dominate the time and there would be a
+much larger gap.  But either way the system is to some extent simulating
+hardware in that it does take some time to do things.

@@ -1,0 +1,18 @@
+
+See the top level README for information on how to run these examples.
+
+This is derived from uart02.
+
+Since we can cheat we can take advantage of that.  So if I write to the
+data register (send a byte out) then read the status.  I could
+make this code tighter but the status register shows that the tx buffer
+is empty already.  Thats fine we can still poll for it, I was worried
+we might have to do more to setup the uart.  Now the first time I ran
+this it showed there was a character in the rx buffer, it is not doing
+that now, but I left the read from DR in there in the uart_init() just
+in case.
+
+This program goes on to an infinite loop that waits for characters
+from the console and echos them back out.  So what you type you get
+back.  Basically we can use the RXFF status bit to see that there is
+a byte, and when we get that byte we can send it out.

@@ -1,0 +1,11 @@
+
+See the top level README for information on how to run these examples.
+
+sysbus_create_simple("pl061", 0x101e4000, pic[6]);
+
+gpio doesnt seem to do anything.  if you were to re-compile qemu
+with DPRINTF we would see something
+
+    DPRINTF("dir = %d, data = %d\n", s->dir, s->data);
+
+I'm not going to do that.

@@ -1,0 +1,114 @@
+
+This is a collection of simple bare metal examples for qemu-system-arm
+
+http://wiki.qemu.org/
+
+QEMU supports a number of targets, this repo is specific to the arm
+and even more specific to one virtual machine.  (one is more than
+enough)
+
+Basically you can get your feet wet without it costing you anything
+more than some time and a little disk space.  You cant brick it, you
+cant let any smoke out.
+
+I run linux, you can to, you dont have to install it you can use a
+thumb drive, and download a live image (ubuntu, linuxmint, etc) and
+run that then within that live boot you can do these things. (In
+the linux/unix world we developers still spend a considerable amount
+of time using a console).
+
+You will of course need QEMU
+
+apt-get install qemu
+
+QEMU supports many targets and machines, for example
+
+> qemu-system-arm -machine help
+Supported machines are:
+versatileab          ARM Versatile/AB (ARM926EJ-S)
+versatilepb          ARM Versatile/PB (ARM926EJ-S)
+lm3s811evb           Stellaris LM3S811EVB
+z2                   Zipit Z2 (PXA27x)
+...
+
+Some folks comment on the quality or lack there of of some of the
+targets or instruction set support.  I have not yet formed an opinion.
+There are some arm based boards whose developers use QEMU to
+semi-natively build various things for those boards since for example
+those boards may have enough resources to run linux but might not have
+enough resources to provide a development environment.  And some
+of those use versatilepb.  One day years ago I tried that one for
+that reason, and that is the one I am using here.  Lets just assume
+it somewhat works.  If not we have the qemu source code to sort it
+out.
+
+apt-get install git-core
+git clone https://github.com/qemu/qemu
+
+qemu/hw/arm/versatilepb.c contains goodies on this system that we will
+need.
+
+For example
+
+
+    /* Memory map for Versatile/PB:  */
+    ...
+    /*  0x101f1000 UART0.  */
+    /*  0x101f2000 UART1.  */
+    /*  0x101f3000 UART2.  */
+    ...
+    sysbus_create_simple("pl011", 0x101f1000, pic[12]);
+    sysbus_create_simple("pl011", 0x101f2000, pic[13]);
+    sysbus_create_simple("pl011", 0x101f3000, pic[14]);
+
+With real hardware we would have some documentation on the board, and
+the chip or chips on the board.  Instead we just have the source
+code from qemu.  It may or may not be derived from some real hardware
+in the past, at the same time we dont know how accurate it is to that
+hardware if derived from it.
+
+If you google pl011 you find a uart core from ARM.  And can get the
+documentation.  In there we find that the data register UARTDR is at
+offset 0x000 from the base address.
+
+And UART0 we see from the qemu source above is at address 0x101f1000
+su UARTDR for uart0 is at address 0x101f1000.
+
+And here is where we get to cheat, initally.  With a real uart we
+have to figure out clocks and clock divisors, we have to initialize
+the uart, we have to make sure the transmitter is not busy or at
+least has room for us to store the next byte we want to send, and so
+on.  Maybe if we are lucky (and I already know the answer), since
+this is an emulator and not real hardware that has to wait for bits to
+shift out slowly.  What if we were to just jam byte after byte into
+the UARTDR register without checking...or even without initializing...
+It happens to work.
+
+So start with the uart01 example
+
+Unless otherwise specified for all of the examples
+
+Run with
+
+qemu-system-arm -M versatilepb -m 128M -nographic -kernel notmain.bin
+
+then ctrl-a then x to exit the qemu console.
+
+Another way is
+
+qemu-system-arm -M versatilepb -m 128M -kernel notmain.bin
+
+and then ctrl-alt-3  (not F3 but 3) will switch to the serial0 console
+and you can see the output, and can close out of qemu.
+
+You will need a toolchain to cross compile/assemble these programs, see
+the file TOOLCHAIN in this directory for more information.
+
+
+I could/should re-write this to be generic or maybe re-target it for
+this platform, but for now you can look at the baremetal/README in
+my raspberrypi repo for more info on basics of bare metal development
+(specifically with the gnu tools, but after that other tools are more
+similar than different), the bootstrap, lauching the C program, etc.
+Likewise a little deeper is the bssdata/README which may shine a light
+on why I do things the way I do them.

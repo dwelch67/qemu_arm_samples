@@ -1,0 +1,56 @@
+
+See the top level README for information on how to run these examples.
+
+derived from timer01
+
+Here is where we would be blinking an led and using a stop watch to see
+if we could confirm what the documentation tells us about our systems
+clock speed.  Not uncomming to find a prescaler we didnt know about a
+divide by 2 or something we have to dig deeper to find.
+
+The sp804 timer has a periodic mode.  Same/similar to the free running
+mode but instead of pre-loading all ones and counting down it loads
+into the value register the load register contents.  Seems a little
+silly to have this difference the could have just let us load the
+xload all the time and if we load all ones then it is a free running
+timer.  Oh well, that is why I set the load register to all ones and
+apparently didnt need to until now.
+
+The other thing here that is interesting is they have a raw interrupt
+status register, and a masked interrupt status register, and an
+interrupt enable.  So one would assume the raw interrupt happens no
+matter what and the masked only if enabled.  And that seems to be the
+case at least with this emulation.
+
+When the counter rolls over from zero we get an interrupt.  And if
+we are polling as we are now we can use the raw interrupt status
+register to measure periods of time.  At first I tried a 16 bit counter
+and watched it roll over a few times.  Then switched to a 32 bit
+counter, I have disabled code that confirms that the prescaler mode
+rolls over to the prescaled value, as well as the raw interrupt fires
+when you roll over with the prescaler (as one would assume).
+
+Using the 32 bit timer I can count longer rollover periods.  You might
+need to tune the value for your computer.
+
+    PUT32(TIMER0_LOAD,0x001FFFFF);
+
+It should count the first 5 pretty quick, but the next 5 take a little
+while each.
+
+12345678
+00000000
+00000001
+00000000
+00000001
+00000002
+00000003
+00000004
+00000000 <--- starting here it takes longer, if too long adjust value
+00000001
+00000002
+00000003
+00000004
+
+
+

@@ -1,0 +1,135 @@
+
+See the top level README for information on how to run these examples.
+
+This is derived from uart01.
+
+You may at this point be craving a printf() function.  Nope, not going
+to happen.  I spent a lot of effort trying to keep newlib building
+and putting a backend on it just so I could get a printf.  It is
+actually easier and more likely to build, but not at all worth it, you
+really need to be desperate for a C library.  So what I do instead and
+have been doing this at my day job for a decade or more to bring up
+and debug chips and boards is I have a wee bitty bit of code that
+prints out 32 bit hex numbers.  That is all I need.  See hexstring()
+in this example.
+
+We are still cheating with respect to the uart, just jamming stuff in
+there without checking.
+
+So we run this and the beginning of the output is
+
+12345678
+00010054
+00000000 E3A00000
+00000004 E59F1004
+00000008 E59F2004
+0000000C E59FF004
+00000010 00000183
+00000014 00000100
+00000018 00010000
+0000001C 00000000
+00000020 00000000
+00000024 00000000
+00000028 00000000
+0000002C 00000000
+
+This second line being the output of the GETPC() function.  What is
+the program counter during that function.
+
+00010054
+
+0001004c <GETPC>:
+   1004c:   e1a0000f    mov r0, pc
+   10050:   e12fff1e    bx  lr
+00010054 <PUT32>:
+   10054:   e5801000    str r1, [r0]
+
+The program counter is two instructions ahead of the current instruction
+so the mov r0,pc gets the value of 0x1004C + 8 which is 0x10054.  I
+could have built this with the wrong address, and hoping it was simple
+enough to be position independent still figured this out (originally
+that is exactly how I figured this out, like is written down somewhere
+but figured it out this way).
+
+So now we know where our program is being loaded with the command line
+we are using.  Eventually we may end up with programs that are not
+position independent and rely on this information.   This also confirms
+we are not loading at address zero.
+
+And that is what the next part of the output is about
+
+00000000 E3A00000
+00000004 E59F1004
+00000008 E59F2004
+0000000C E59FF004
+00000010 00000183
+00000014 00000100
+00000018 00010000
+
+There are various ways to do this but since I know the toolchain
+I can take those words above assuming some at least are instructions
+and tack them onto the end of start.s
+
+.word 0xE3A00000
+.word 0xE59F1004
+.word 0xE59F2004
+.word 0xE59FF004
+.word 0x00000183
+.word 0x00000100
+.word 0x00010000
+
+re-build and look at the .list disassembly
+
+   10084:   e3a00000    mov r0, #0
+   10088:   e59f1004    ldr r1, [pc, #4]    ; 10094 <GET8+0x18>
+   1008c:   e59f2004    ldr r2, [pc, #4]    ; 10098 <GET8+0x1c>
+   10090:   e59ff004    ldr pc, [pc, #4]    ; 1009c <GET8+0x20>
+   10094:   00000183    andeq   r0, r0, r3, lsl #3
+   10098:   00000100    andeq   r0, r0, r0, lsl #2
+   1009c:   00010000    andeq   r0, r1, r0
+
+Remember qemu or at least how we are using it is assuming that we are
+the linux kernel.  The linux kernel is expecting some things passed
+to it (by the bootloader which in this case we dont have/need because
+qemu is doing that job).
+
+So this code is setting up those registers and then branching to
+0x10000 where it expects to find the linux kernel, but instead we have
+inserted our bare metal program (the linux kernel itself is a bare metal
+program).
+
+FYI, from the above they have left some info for the kernel at address
+0x100.
+
+00000100 00000005
+00000104 54410001
+00000108 00000001
+0000010C 00001000
+00000110 00000000
+00000114 00000004
+00000118 54410002
+0000011C 08000000
+00000120 00000000
+00000124 00000000
+00000128 00000000
+
+You can google ATAGS and maybe find out what these things mean, I'm not
+that interested in them.
+
+The next little bit of info
+
+101F1FE0 00000011
+101F1FE4 00000010
+101F1FE8 00000014
+101F1FEC 00000000
+101F1FF0 0000000D
+101F1FF4 000000F0
+101F1FF8 00000005
+101F1FFC 000000B1
+
+I saw in the pl011.c code (qemu/hw/char/pl011.c)
+
+static const unsigned char pl011_id_arm[8] =
+  { 0x11, 0x10, 0x14, 0x00, 0x0d, 0xf0, 0x05, 0xb1 };
+
+And it looks like that matches, cool.

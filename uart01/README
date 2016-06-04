@@ -1,0 +1,35 @@
+
+See the top level README for information on how to run these examples.
+
+As mentioned in the top level README, from the QEMU source, and/or
+googling, we see that UART0 is a pl011 at the base address 0x101f1000
+
+
+    /*  0x101f1000 UART0.  */
+    ...
+    sysbus_create_simple("pl011", 0x101f1000, pic[12]);
+
+This example is where we find out that we can just blast bytes out
+without initializing the uart nor checking for the tx buffer to be
+empty.
+
+Being the first example we officially dont yet know where in memory
+our program is being loaded.  Good, bad, or otherwise, qemu or at least
+how we are using it is as if we are a linux kernel image.  Launching
+a linux kernel image is not all that complicated, it is just that we
+are not loaded into memory at address 0x00000000 where the processor
+boots, but instead at some offset not too far into ram.  In a real
+system a bootloader, also running somewhere in that lower ram will
+prepare information for the kernel like how much memory we have and
+some other things, now a days with a device tree that info is a bit
+on the crazy side.  But we dont care, so far it appears not going to
+worry about that.  This example is so small and simple that whatever
+base address we link it for, it will work as it is basically position
+independent.  This will make a little more sense with the uart02
+example.
+
+This example shoves the characters 0123456701234567...out uart0
+forever.  See the top level README on how to run this and see this
+output.
+
+
