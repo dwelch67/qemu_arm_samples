@@ -1,0 +1,296 @@
+
+See the top level README for information on how to run these examples.
+
+See the top level README on getting the ARM ARM.  You need that for
+this example.
+
+The used to call it swi, software interrupt.  Now they call it svc
+for service or service call.  It is the same instruction and encoding.
+
+Lets go back though in the Programmers Model chapter of the ARM ARM,
+in the Processor modes section we see 7 modes.  In the next section
+under Registers (still in Programmers Model chapter) slide down a
+page and we see the register map.  At any time the software can only
+access 16 registers r0, to r15 (PC).  What this chart shows is that
+some registers are mode specific.  For example Supervisor, Abort,
+Undefined, Interrupt and Fast Interrupt each have their own stack
+pointer (R13), or in other words they each have separate stacks.
+But every mode shares r0-r7.  FIQ has its own r8-r12, the idea being
+that a "fast" interrupt doesnt have to preserve those registers
+(on the stack) it can just trash them at will, where a normal interrupt
+has to preserve them.  For real hardware the processor core has a
+separate FIQ and IRQ input, but it is not uncommon to have an interrupt
+controller that allows any interrupt from a peripheral to either FIQ
+or IRQ.  That way you can pick which peripheral interrupt(s) you want
+to use with FIQ, and the rest with IRQ.
+
+System and user share all the registers.  The thing of interest here
+is User is a special mode.  It has some restrictions, the other modes
+can switch modes using an msr cpsr,rn instruction, user mode cannot.
+If you were making an operating system and wanting to protect one
+software program from another you might want to have those programs
+run in User mode.  Okay so doesnt that mean I am stuck.  And here we
+have this example.  For the protection purpose and in general you might
+want to implement an operating system, and the typical thing you need
+is a way for applications to make system calls.  Asking the operating
+system to do things, like access the file system, draw text or graphics,
+and so on.  With ARM you use the swi (svc) instruction, this causes
+the swi exception/interrupt to happen (will see this in a second) which
+is handled in different mode.  Still under Programmers Model chapter
+see the Exceptions section.  There is a table there that shows
+the list of "Exceptions" (think interrupts), where their entry point
+is and what mode they switch to when handling this exception.  Now
+if you have dealt with other processors you normally have a list of
+addresses.  With ARM you actually start executing there, since
+these are mostly 4 bytes apart, this means you get one instruction
+per exception in the table.  So it has to be a branch or a pc relative
+load.
+
+Which leads to making an exception table that looks somewhat like this.
+
+.globl _start
+_start:
+    ldr pc,reset_handler
+    ldr pc,undefined_handler
+    ldr pc,swi_handler
+    ldr pc,prefetch_handler
+    ldr pc,data_handler
+    ldr pc,unused_handler
+    ldr pc,irq_handler
+    ldr pc,fiq_handler
+reset_handler:      .word reset
+undefined_handler:  .word hang
+swi_handler:        .word swi
+prefetch_handler:   .word hang
+data_handler:       .word hang
+unused_handler:     .word hang
+irq_handler:        .word hang
+fiq_handler:        .word hang
+
+Now, we learned that with how we are running our program our entry
+point is at 0x10000.  We need to put instructions at address
+0x00000008 at a minimum to deal with swi, and other addresses down
+near zero if we want to handle interrupts or anything else.  There
+are different ways to do this, encoding the branch instruction is
+pretty easy.  But why not let the tools do the work?  With the code
+above positioned starting at address 0x10000.  Is going to create
+exception entry points that are pc relative loads.  So whatever address
+the instruction is, in this case plus some, and load that in this
+case into the program counter, basically doing a branch from a table
+(generating an interrupt vector table from the ARM start executing
+model.
+
+What this looks like when disassembled (see notmain.list) is
+
+00010000 <_start>:
+   10000:   e59ff018    ldr pc, [pc, #24]   ; 10020 <reset_handler>
+   10004:   e59ff018    ldr pc, [pc, #24]   ; 10024 <undefined_handler>
+   10008:   e59ff018    ldr pc, [pc, #24]   ; 10028 <swi_handler>
+   1000c:   e59ff018    ldr pc, [pc, #24]   ; 1002c <prefetch_handler>
+   10010:   e59ff018    ldr pc, [pc, #24]   ; 10030 <data_handler>
+   10014:   e59ff018    ldr pc, [pc, #24]   ; 10034 <unused_handler>
+   10018:   e59ff018    ldr pc, [pc, #24]   ; 10038 <irq_handler>
+   1001c:   e59ff018    ldr pc, [pc, #24]   ; 1003c <fiq_handler>
+
+00010020 <reset_handler>:
+   10020:   00010040
+00010024 <undefined_handler>:
+   10024:   000100ac
+00010028 <swi_handler>:
+   10028:   000100b0
+0001002c <prefetch_handler>:
+   1002c:   000100ac
+00010030 <data_handler>:
+   10030:   000100ac
+00010034 <unused_handler>:
+   10034:   000100ac
+00010038 <irq_handler>:
+   10038:   000100ac
+0001003c <fiq_handler>:
+   1003c:   000100ac
+00010040 <reset>:
+...
+000100ac <hang>:
+...
+000100b0 <swi>:
+
+So the toolchain, has taken care to fill in the exception table with
+the pc relative load from an address 0x20 ahead.  And it has filled
+in that table with addresses to the handler entry points, reset,
+swi and hang in this case.
+
+So what if we were to copy all 0x40 bytes from 0x10000 to 0x0000, what
+does that buy us?  The instructions are pc relative, they are position
+independent.  Doesnt matter if it is at address 0x10000, 0x0000, 0x40000
+the 0xe59ff018 instruction is going to load the pc with the value found
+in memory at that instructions address plus 0x20.  What does not change
+is the table of addresses remains 0x10000 based which is where we have
+our handlers.
+
+We have very easily made the toolchain generate an exception table, and
+a table of addresses to assist it.  So we just need to copy this from
+our entry point of 0x10000 to where we want/need it 0x00000.
+
+This basically copies 16 words (0x40 bytes) from 0x10000 to 0x00000.
+
+    mov r0,#0x10000
+    mov r1,#0x00000
+    ldmia r0!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    stmia r1!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    ldmia r0!,{r2,r3,r4,r5,r6,r7,r8,r9}
+    stmia r1!,{r2,r3,r4,r5,r6,r7,r8,r9}
+
+Knowing what we know now you could also simply write 0xe59ff018 to
+address 0x00000008, and you could write the address for the swi
+entry point (0x000100b0 in the above code) to address 0x00000028
+and it would work as well.  I prefer this method.
+
+The next thing the bootstrap needs to do is setup the stacks for
+the various modes (or at least the ones we care about).  We need
+for this example at a minimum a stack for supervisor mode, the mode
+we booted into, and one for user/system modes.
+
+
+    ;@ FIQ 110 10001
+    msr cpsr_c,#0xD1
+    mov sp,#0x1000
+
+    ;@ IRQ 110 10010
+    msr cpsr_c,#0xD2
+    mov sp,#0x2000
+
+    ;@ SVC 110 10011
+    msr cpsr_c,#0xD3
+    mov sp,#0x3000
+
+    ;@ ABT 110 10111
+    msr cpsr_c,#0xD7
+    mov sp,#0x4000
+
+    ;@ UND 110 11011
+    msr cpsr_c,#0xDB
+    mov sp,#0x5000
+
+    ;@ SYS 110 11111
+    msr cpsr_c,#0xDF
+    mov sp,#0x6000
+
+
+
+    ;@ SVC 110 10011
+    msr cpsr_c,#0xD3
+
+Now the msr instruction is more than a little confusing with respect
+to the fields.  Basically they have some bits in the instruciton that
+let you control which bits in the psr you are writing to and/or allow
+you to not have to do a read-modify write, you can just write the
+bits you want and leave others unchanged.  Why does cpsr_c allow
+us to change the mode bits?  Dont know, but that is how you do it.
+
+We saw in the Processor modes section the 5 bit encoding for processor
+modes, this is where we use that.  By changing these bits in the cpsr
+we can instantly switch modes.  We need to do this on boot to setup
+the stacks, or at least before we need them.  We remember that system
+and user use the same stack, but system we can get out of using this
+instruction, user we cannot (the purpose of this example).  So we
+use system mode to setup the user stack.  We could also setup the
+user stack just as we are entering user mode, so long as you have
+a stack setup (the sp points to some ram) before you start using it.
+
+So our program enters at notmain(), prints some interesting stuff out,
+then switches to user mode.  We need the msr instruction for that
+and my preference is to just use assembly language rather than try
+to do something compiler specific and not portable.
+
+We enter in user mode at user_main(), and again print some interesting
+stuff out.  Then we perform two "system" calls.  There is nothing
+special going on here.  For a particular operating system or rom
+monitor or whatever, how you make a system call or at least what if
+any registers you need to prepare and the encoding of the instruction
+are whatever you wish.  You could google this information for Linux
+on an ARM and get some answer.  And that would be a fine answer, but
+in no way does that mean for this example or anything you write, that
+you have to conform to someone elses system calling convention.
+
+The instruction encoding is found in the list of instructions as SWI
+in the ARM ARM for ARMv5.  If you look in newer ARM ARMs you may
+see it called SVC instead.  But it is the same encoding and with
+a modern assembler you can use either mnemonic.  Note that there is
+a 24 bit immediate in that instruction.  If you think about it that
+would be a good place to indicate what service call we are making.
+BUT, we have a problem.   Thumb mode.  At the time of ARMv4T and the
+ARMv5T we are playing with here, we were dealing with basically the
+original thumb instruction set.  Which had a one to one relationship
+with an ARM instruction.  A one directional relationship.  Every
+thumb instruction directly mapped to a full sized ARM instruction.
+This manual shows the equivalent ARM instruction.  Why do we care?
+Well, for the ARMv4T and ARMv5T, we can survive if we want.  If you have
+not looked at any of the thumb examples yet.  It is yet another mode
+the thumb instructions at least at this time in history are all 16 bit.
+If you read more about exceptions you see that when you enter SWI
+(and probably all of the others) you are forced into ARM mode.  Those
+handers have to be ARM instructions not thumb.  But the program
+status register is saved, and when returning from the exception that is
+how they return you to the right mode.  One of those psr bits being the
+thumb mode.  So if you use the thumb swi, the handler is in arm mode
+but it returns you to thumb mode.  Have you figured out where I am
+heading yet?  If you read the subsection again on the software
+interrupt exception, not that it doesnt say anywhere that these immediate
+bits are extracted for you?  Would have been nice for example if r0
+were to contain those bits maybe.  Or maybe some special register
+somewhere.  So if you want to use those immediate bits to indicate
+something to the system, you get to extract them from the instruction.
+You have to use the link register to figure out where the swi instruction
+was that got us into the handler.  Then by decoding figure it out if it
+was a thumb mode or ARM mode then extract the immediate bits.  Being
+little endian for the thumb instruction it is the first of the two
+byte instruction before what lr is pointing to.  For ARM mode the first
+of four bytes before what lr is pointing to.  Note that the ARM encoding
+the msbyte is four bits of condition and then four 1s.  The thumb
+msbyte is 0b11011111.  So if the user were to use the condition
+bit pattern 1101, or basically the ARM mode instruciton SWILE the
+msbyte would be 0xDF, just like the encoding for thumb.  Fortunately
+when they added thumb2 extensions to the thumb instruction set (took
+formerly undefined instructions and used those to create 32 bit thumb
+instructions, yes we now have 32 bit arm instructions, 16 bit thumb
+instructions and 32 bit thumb instructions which are not the same
+encoding but have similar features as some of the ARM instrucitons but
+no longer do they have a one to one thumb to ARM equivalent.  Note I
+personally think the original thumb mode simply decoded the thumb
+instruction into its equivalent arm (for which it would be nice to
+have a reference manual to show that) and then the processor only
+has to deal with ARM instructions.  You convert the thumb to ARM then
+shove it in there.
+
+How do you solve this problem?
+1) dont care about the immediate bits in the instruction
+2) do care about the immediate bits, but make a rule for your system
+that they must always be in lets say ARM mode to make a call
+3) you simply use one or more general purpose registers to indicate
+what system call you are wanting to do.
+
+I like the latter, almost all of the registers are shared between
+modes, so why not use say r0.  And that is what I have done.
+
+If you follow the code, the DO_SWI function, based on the calling
+convention, basically is passed four parameters in r0-r3.  The DO_SWI
+function does not modify those, it does the swi instruction.
+The swi handler like the convention doesnt preserve r0-r3 but
+does pass them into the C swi handler swi_main().  In there we take
+the first parameter (r0, same as the first parameter to DO_SWI) and
+examine it to see what system call is being made.  These are simple
+demonstrations, one manipulates the incoming parameter and returns that
+the other reads the mode and returns that to emphasize that we are in
+supervisor mode.
+
+And the last most important thing.  In the ARM ARM, it gives you
+a specific instruction at the end of the exception documentation.
+You basically have to use that exact instruction to return properly
+(to get it to restore the cpsr and return you to your correct mode
+and code that was running before the exception).
+
+swi:
+    push {r4-r12,lr}
+    bl swi_main
+    pop {r4-r12,lr}
+    movs pc,lr      <----------- correct instruction to return from swi
