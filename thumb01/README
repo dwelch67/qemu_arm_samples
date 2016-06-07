@@ -1,0 +1,256 @@
+
+See the top level README for information on how to run these examples.
+
+See the top level README on getting the ARM ARM.  You need that for
+this example.
+
+I am a big fan of the thumb instruction set.  At least the original
+thumb instruction set, not the thumb2 extension stuff or T32 or whatever
+they call it now.  But even that is just the thumb instruction set
+with extensions, so the original is still in there.  And you can
+limit yourself to that.  Let me say it this way.  The early thumb
+instruction set is the only portable ARM instruction set, works on
+everything from the ARMv4T to the present.  Cortex-m's as well.
+
+What is the thumb instruction set?  Well using the old ARMv5 ARM ARM
+as we are at the moment they describe arm and thumb in two sections
+of the book.  Later on they combine into one instruciton set, when you
+look up the add instruction you get arm encodings and thumb encodings.
+You can certainly download an ARMv7-ar ARM ARM and look at the
+instructions there and see the various encodings and most important
+what architecture supports that encoding.  From the ARMv4T days, the
+classic ARM7TDMI, they had this completely different 16 bit instruction
+set which was a direct subset of the full sized 32 bit arm instruction
+set.  For example with the ARM instruction set you can
+
+add r1,r2,r3
+
+as well as
+
+add r1,r1,r3
+
+but with thumb you cannot do three register stuff most of the time
+you are limited to two register
+
+add r1,r3
+
+which is the same as saying r1 = r1 + r3
+
+There might be one or two that allows a three operands.  Likewise many
+of the ARM instructions have immediates or lots of shifting options, etc.
+And every one has a condition section.  To get to 16 bits and be useful
+what they did was get rid of the condition, saves 4 bits, most of the
+instructions only support the lower 7 registers r0-r7 instead of all 16
+saves two bits, and as mentioned two register operands instead of three,
+saves four more bits.  And so on.
+
+In the thumb instruction set documentation in the ARMv5 ARM ARM they
+show you the equivalent ARM instruction for that thumb instruction.
+
+So you can still do quite a bit of stuff, almost everything actually
+it just might take more instructions.  Each instruction is half the size
+so in order to win it has to take less than twice as many instructions
+and that has a lot to do with the compiler.  I think gcc started
+supporting thumb in the 3.x.x days and even then thumb took about
+20% more instructions/clocks to execute the same code apples to apples
+but at half the size per instruction that was a size savings.  A very
+interesting one was the Nintendo Gameboy Advance, it had one smaller
+memory that was 32 bits wide, but the rom and larger ram were 16 bits
+wide, so actually thumb code ran faster on that ram or rom compared
+to arm code compiled from the same source, despite the 20% increase
+at the time.  I dont know what the increase in number of instructions
+is now, and of course it is extremely dependent on your application
+anyway, so like any benchmark is only somewhat relevant.
+
+ARM has a relatively simple way to switch modes. The BX branch exchange
+instruction is the primary method.  Some architectures you can pop
+into the pc and it will do the right thing, SOME IT WONT.  ARM
+instructions have to be 4 byte aligned so the lower 2 bits of an arm
+instructions address are always zeros.  For thumb, being 16 bit they
+only have to be 16 bit alined so the lower bit is zero, bit one can
+be a one or zero and be legal.  They used this fact to use the lsbit
+to indicate whether the destination address for a bx instruction is
+branching to arm mode or thumb mode.  When set bx is branching to thumb
+mode.  The bx instruction strips that lsbit when it goes into the pc
+it is only a signal to the bx instruction (and perhaps pop, depending).
+They also have a blx instruction, but nobody uses it.  It appears there
+are some/many implementations where it didnt work, so now it is shunned
+by the tools.  I found an arm11 document, but didnt look to hard to see
+what is what with armv4 or in these examples armv5.  Lets just be like
+everyone else and avoid it.
+
+ARM has this term interwork or thumb interwork which means we want
+to be mixed mode, some code arm and some code thumb and hopefully the
+toolchain will sort it out.  Well guess what...that doesnt always work.
+Very easy to see here.  If we take the swi01 example and just change
+the gcc command line to add -mthumb
+
+	$(ARMGNU)-gcc -c $(COPS) -mthumb notmain.c -o notmain.o
+
+We see some initial success:
+
+Notmain is indeed 16 bit instructions not 32.
+
+000101b4 <notmain>:
+   101b4:	b510      	push	{r4, lr}
+   101b6:	4811      	ldr	r0, [pc, #68]	; (101fc <notmain+0x48>)
+   101b8:	f7ff ff95 	bl	100e6 <GET32>
+   101bc:	2400      	movs	r4, #0
+   101be:	1c20      	adds	r0, r4, #0
+   101c0:	f7ff ffae 	bl	10120 <hexstrings>
+
+and even better the linker has patched in a trampoline to get from
+arm to thumb mode for us.
+    
+00010040 <reset>:
+   ...
+   1008c:	eb000060 	bl	10214 <__notmain_from_arm>
+
+00010214 <__notmain_from_arm>:
+   10214:	e59fc000 	ldr	ip, [pc]	; 1021c <__notmain_from_arm+0x8>
+   10218:	e12fff1c 	bx	ip
+   1021c:	000101b5
+
+and note that the address has the lsbit set 000101b5 so that was done
+for us as well.
+
+But the reverse is not true.
+
+this arm function
+
+000100a4 <GETMODE>:
+   100a4:	e10f0000 	mrs	r0, CPSR
+   100a8:	e12fff1e 	bx	lr
+
+in thumb mode they simply bl to it which is not legal and wont work
+
+   101e2:	f7ff ff5f 	bl	100a4 <GETMODE>
+
+so you end up crashing eventually the processor is in thumb mode but
+is pulling apart 32 bit arm instructions as thumb instructions and
+if it survives doing that it wont survive long.
+
+As of this writing I am using gcc 4.7.3 and binutils 2.24 (apt-gotten
+arm toolchain)
+
+arm-linux-gnueabi-gcc (Ubuntu/Linaro 4.7.3-12ubuntu1) 4.7.3
+Copyright (C) 2012 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+GNU assembler (GNU Binutils for Ubuntu) 2.24
+Copyright 2013 Free Software Foundation, Inc.
+This program is free software; you may redistribute it under the terms of
+the GNU General Public License version 3 or later.
+This program has absolutely no warranty.
+This assembler was configured for a target of `arm-linux-gnueabi'.
+
+I have tried using -mthumb-interwork which is supposed to tell the linker
+to fix this up in both directions but it only seems to be figuring it
+out in the forward direction.  My guess is the gcc created object
+indicates to the linker these are thumb things.  the assembler is not
+indicating arm things, or it is in that the linker knows that calling
+thumb it is going arm to thumb but doesnt see a problem with the thumb
+code in the notmain object calling arm code in the assembly object.
+
+And actually if I do some experiments looking at the output assembly
+for with and without -mthumb and with and without -mthumb-interwork the
+addition of the -mthumb-interwork does not change the output of the
+compiler.  So there you go.
+
+In either direction you need to be prepared to fix this.  I recommend
+you just do everything thumb, or at least everything you can.  I
+accidentally got lucky using swi01 as an example to convert to thumb
+because it has instructions that are not supported in thumb mode.  the
+mrs and msr.  so we get to deal with that as well.  We can hope that
+the linker continues to solve the arm to thumb for us or we can do it
+ourselves.  Also remember that the exceptions all come in in arm mode
+so we have to remember that.
+
+I am going to assume the linker is not going to help and just patch
+everything up, and leave the compiled code all thumb mode (-mthumb).
+
+The thumb instruction documentation shows that if the R bit is set
+which for a push is pc and pop is lr, and we are armv5 or above
+then the pop puts bit 0 in the T bit which means it switches modes 
+
+if R == 1 then
+value = Memory[address,4]
+PC = value AND 0xFFFFFFFE
+if (architecture version 5 or above) then
+T Bit = value[0]
+address = add
+
+This also basically tells us that if we are on an arm7 (armv4t) then
+we cannot pop {lr} to switch modes.  These examples assume armv5t so we
+are okay to do this
+
+.thumb_func
+.globl DO_SWI
+DO_SWI:
+    push {lr}
+    svc 0
+    pop {pc}
+
+Actually the arm tools want is to stay 64 bit aligned on the stack
+pointer so we should throw a dummy register in there
+
+.thumb_func
+.globl DO_SWI
+DO_SWI:
+    push {r4,lr}
+    svc 0
+    pop {r4,pc}
+
+Note old code and old docs were not thining about thumb mode so you would
+often see a function return with
+
+    mov pc,lr
+
+but now as a habit you should instead always
+
+    bx lr
+
+If you take a simple dummy function and compile to assembly with -mthumb
+
+
+void dummy ( void )
+{
+}
+
+arm-linux-gnueabi-gcc -S -O2 -march=armv5t -mthumb dummy.c
+
+and here is the punch line for every label considered a thumb function
+
+	.global	dummy
+	.code	16
+	.thumb_func
+dummy:
+	bx	lr
+
+for gnu assembler you need .thumb_func to preceed it.  This tells the
+tools to generate an odd address, address|1 for you.  You dont have
+to do it like you see some folks doing (and doing wrong sometimes as
+they put +1 instead of |1, if the tool did it for them the +1 breaks
+it).   So for all of our thumb function labels we will see .thumb_func.
+
+Thumb doesnt support mrs or msr so we have to switch to arm mode, but
+we want these functions in thumb mode for the thumb code to branch link
+to so, the entry point is thumb
+
+.thumb_func
+.globl GETMODE
+GETMODE:
+    ldr r0,=getmode
+    bx r0
+
+we branch to arm mode and then in arm mode we finish it up.  lr was
+a thumb address so we simply bx lr to go back, we dont have to go back
+to thumb mode in our code then return from there.    
+
+getmode:
+    mrs r0,cpsr
+    bx lr
+
+
+

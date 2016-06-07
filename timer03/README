@@ -1,0 +1,28 @@
+
+See the top level README for information on how to run these examples.
+
+derived from timer02 and svc01.  Read the README for svc01 for basic
+exception table stuff.   The addition to that for interrupts is this
+emulated machine has an ARM NVIC.
+
+    dev = sysbus_create_varargs("pl190", 0x10140000,
+    /*  0x10140000 Vectored interrupt controller.  */
+
+And we can get the pl190 docs from ARM to see how that works.  I left
+some experimental code in there used to determine where in the NVIC
+this interrupt connects.  Also confirm that the raw interrupt status
+sees the timer interrupt.  Enable the interrupt and it passes through
+to the processor.  Then in the processor, in the cpsr register you have
+to enable interrupts, the final enable to the core.  Once all of that is
+in place, and like the swi/svc we have to connect the exception to
+some code, we have to return with the proper instruction, we should
+save the processor state (registers) to the stack so that we can trash
+them and return without affecting the code that was running.
+
+And so for each time the timer rolls over, we get an interrupt, this
+ultimately calls irq_main which prints stuff out, generally a bad idea
+for an interrupt handler, but safe enough here because this code is
+not doing anything else and the timing between interrupts is long enough
+to not get another before we finish the prior.  It also clears the
+interrupt which we saw from timer02 and from the experiment.  And
+returns with the proper instruction from the ARM ARM.
