@@ -1,0 +1,11 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+So after reading the uart01 README.  I/we could go with the cortex-m3
+on the lm3s811 but chose to experience the armv7 thumb2 extensions on
+a full sized ARMv7.  Only the code right after _start is ARM the rest
+is thumb.  With the compiler allowed to generate ARMv7 thumb2
+extensions.
+
+qemu-system-arm -M vexpress-a9 -m 128M -nographic -kernel notmain.bin

@@ -1,0 +1,19 @@
+
+See the previous level README for schematic and programmers reference
+information.
+
+The cortex-m series are thumb only machines, they cannot execute ARM
+instructions.  They also boot a little differently instead of on reset
+starting "execution" from address 0x00000000 they have a vector table
+at address 0x00000000, which contains addresses to the entry points
+depending on the exception.  The address for reset is found at address
+0x00000004.
+
+qemu-system-arm -M lm3s811evb -m 8K -nographic -kernel notmain.bin
+
+The lm3s811 is a cortex-m3 chip which is ARMv7m based so supports like
+150 thumb2 extensions (variable length instructions).  Where the
+cortex-m0 is ARMv6m based and only has like a dozen.  Going with the
+cortex-m0 or even better the ARMv4T or arm7tdmi thumb instructions is
+the most portable.  So demonstrated with that here even though the
+lm3s811 can support thumb2 extensions.
